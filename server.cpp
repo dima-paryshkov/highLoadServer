@@ -19,6 +19,7 @@ struct request
     struct sockaddr_in cliaddr;
     socklen_t len;
     float *matrix;
+    float *result;
     int size;
     int degree;
 };
@@ -38,9 +39,50 @@ bool active = true;
 
 void *matrixMultiplication(void *arg)
 {
+    request rq;
     while (active)
     {
+        if (pthread_mutex_lock(&mutexQueueTask) != 0)
+        {
+            perror("Can't lock mutex (child process)");
+        }
+        if (queueTask.size() != 0)
+        {
+            rq = queueResolvedTask[0];
+            queueResolvedTask.pop_back();
+            if (pthread_mutex_unlock(&mutexQueueTask) != 0)
+            {
+                perror("Can't unlock mutex (child process)");
+            }
+            rq.result = (float *)malloc(rq.size * rq.size * sizeof(float));
+            for (int i = 0; i < rq.size; i++)
+            {
+                for (int j = 0; j < rq.size; j++)
+                {
+                    rq.result[i * rq.size] = 0;
+                    for (int k = 0; k < rq.size; k++)
+                    {
+                        rq.result[i * rq.size + j] += rq.matrix[i * rq.size + k] + rq.matrix[j * rq.size + k];
+                    }
+                }
+            }
+
+            if (pthread_mutex_lock(&mutexQueueResolvedTask) != 0)
+            {
+                perror("Can't lock mutex (child process)");
+            }
+            queueResolvedTask.push_back(rq);
+            if (pthread_mutex_unlock(&mutexQueueResolvedTask) != 0)
+            {
+                perror("Can't unlock mutex (child process)");
+            }
+        }
+        else if (pthread_mutex_unlock(&mutexQueueTask) != 0)
+        {
+            perror("Can't unlock mutex (child process)");
+        }
     }
+    pthread_exit(NULL);
 }
 
 int main()
@@ -164,7 +206,7 @@ int main()
             if (queueResolvedTask.size() != 0)
             {
                 int n;
-                if ((n = write(queueResolvedTask[0].sockfd, queueResolvedTask[0].matrix, queueResolvedTask[0].size * queueResolvedTask[0].size)) < 0)
+                if ((n = write(queueResolvedTask[0].sockfd, queueResolvedTask[0].result, queueResolvedTask[0].size * queueResolvedTask[0].size)) < 0)
                 {
                     perror("Can't write information in socket (main process)");
                     close(sockfd);
