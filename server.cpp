@@ -23,15 +23,24 @@ struct request
     int degree;
 };
 
-vector<request> queue;
+vector<request> queueTask;
+vector<request> queueResolvedTask;
 
 int totalNumberOfConnection = 0;
 int currentNumberOfConnection = 0;
 
 const int numberOfThread = 11;
 
+pthread_mutex_t mutexQueueTask;
+pthread_mutex_t mutexQueueResolvedTask;
+
+bool active = true;
+
 void *matrixMultiplication(void *arg)
 {
+    while (active)
+    {
+    }
 }
 
 int main()
@@ -79,6 +88,18 @@ int main()
         exit(-1);
     }
 
+    if (pthread_mutex_init(&mutexQueueTask, (pthread_mutexattr_t *)NULL) != 0)
+    {
+        perror("Can't init mutex (mutexQueueTask)");
+        exit(-1);
+    }
+
+    if (pthread_mutex_init(&mutexQueueResolvedTask, (pthread_mutexattr_t *)NULL) != 0)
+    {
+        perror("Can't init mutex (mutexQueueResolvedTask)");
+        exit(-1);
+    }
+
     /* create second process for send information */
     int pid = fork();
     if (pid == -1)
@@ -101,37 +122,72 @@ int main()
 
             totalNumberOfConnection++;
             currentNumberOfConnection++;
-            
-            if (read(rq.sockfd, (void*)rq.size, sizeof(int)) < 0)
+
+            if (read(rq.sockfd, (void *)rq.size, sizeof(int)) < 0)
             {
                 perror("Can't read size from socket");
                 close(sockfd);
                 exit(-1);
             }
 
-            if (read(rq.sockfd, (void*)rq.degree, sizeof(int)) < 0)
+            if (read(rq.sockfd, (void *)rq.degree, sizeof(int)) < 0)
             {
                 perror("Can't read degree from socket");
                 close(sockfd);
                 exit(-1);
             }
 
-            rq.matrix = (float*)malloc(rq.size * rq.size * sizeof(float));
+            rq.matrix = (float *)malloc(rq.size * rq.size * sizeof(float));
 
-            if (read(rq.sockfd, (void*)rq.matrix, rq.size) < 0)
+            if (read(rq.sockfd, (void *)rq.matrix, rq.size) < 0)
             {
                 perror("Can't read size from socket");
                 close(sockfd);
                 exit(-1);
             }
 
-            queue.push_back(rq);
+            if (pthread_mutex_lock(&mutexQueueTask) != 0)
+            {
+                perror("Can't lock mutex (main process)");
+            }
+            queueTask.push_back(rq);
+            if (pthread_mutex_unlock(&mutexQueueTask) != 0)
+            {
+                perror("Can't unlock mutex (main process)");
+            }
         }
     }
     else
     {
         while (1)
         {
+            if (queueResolvedTask.size() != 0)
+            {
+                int n;
+                if ((n = write(queueResolvedTask[0].sockfd, queueResolvedTask[0].matrix, queueResolvedTask[0].size * queueResolvedTask[0].size)) < 0)
+                {
+                    perror("Can't write information in socket (main process)");
+                    close(sockfd);
+                    exit(-1);
+                }
+
+                if (n < queueResolvedTask[0].size * queueResolvedTask[0].size)
+                {
+                    fprintf(stderr, "Warning: not all information was write in socket (main process)\n");
+                }
+
+                close(queueResolvedTask[0].sockfd);
+
+                if (pthread_mutex_lock(&mutexQueueResolvedTask) != 0)
+                {
+                    perror("Can't lock mutex (main process)");
+                }
+                queueResolvedTask.pop_back();
+                if (pthread_mutex_unlock(&mutexQueueResolvedTask) != 0)
+                {
+                    perror("Can't unlock mutex (main process)");
+                }
+            }
         }
     }
 }
