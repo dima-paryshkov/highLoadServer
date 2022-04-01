@@ -18,8 +18,8 @@ struct request
     int sockfd;
     struct sockaddr_in cliaddr;
     socklen_t len;
-    float *matrix;
-    float *result;
+    int *matrix;
+    int *result;
     int size;
     int degree;
 };
@@ -30,10 +30,13 @@ vector<request> queueResolvedTask;
 int totalNumberOfConnection = 0;
 int currentNumberOfConnection = 0;
 
-const int numberOfThread = 11;
+const int numberOfThread = 1;
 
 pthread_mutex_t mutexQueueTask;
 pthread_mutex_t mutexQueueResolvedTask;
+
+/* descriptor for listen socket */
+int sockfd;
 
 bool active = true;
 
@@ -42,19 +45,20 @@ void *matrixMultiplication(void *arg)
     request rq;
     while (active)
     {
+        sleep(1);
         if (pthread_mutex_lock(&mutexQueueTask) != 0)
         {
             perror("Can't lock mutex (child process)");
         }
-        if (queueTask.size() != 0)
+        if (queueTask.size() > 0)
         {
-            rq = queueResolvedTask[0];
-            queueResolvedTask.pop_back();
+            rq = queueTask[0];
+            queueTask.pop_back();
             if (pthread_mutex_unlock(&mutexQueueTask) != 0)
             {
                 perror("Can't unlock mutex (child process)");
             }
-            rq.result = (float *)malloc(rq.size * rq.size * sizeof(float));
+            rq.result = (int *)malloc(rq.size * rq.size * sizeof(int));
             for (int i = 0; i < rq.size; i++)
             {
                 for (int j = 0; j < rq.size; j++)
@@ -69,8 +73,8 @@ void *matrixMultiplication(void *arg)
 
             if (rq.degree > 2)
             {
-                float *c = rq.result;
-                rq.result = (float *)malloc(rq.size * rq.size * sizeof(float));
+                int *c = rq.result;
+                rq.result = (int *)malloc(rq.size * rq.size * sizeof(int));
                 for (int l = 2; l < rq.degree; l++)
                 {
                     for (int i = 0; i < rq.size; i++)
@@ -84,7 +88,7 @@ void *matrixMultiplication(void *arg)
                             }
                         }
                     }
-                    float* tmp = c;
+                    int* tmp = c;
                     c = rq.result;
                     rq.result = tmp;
                 }
@@ -110,9 +114,52 @@ void *matrixMultiplication(void *arg)
     pthread_exit(NULL);
 }
 
+void* sendmsg(void *arg)
+{
+    while (1)
+    {
+        if (queueResolvedTask.size() != 0)
+        {
+            int n;
+            if ((n = write(queueResolvedTask[0].sockfd, queueResolvedTask[0].result, queueResolvedTask[0].size * queueResolvedTask[0].size)) < 0)
+            {
+                perror("Can't write information in socket (main process)");
+                close(sockfd);
+                exit(-1);
+            }
+
+            if (n < queueResolvedTask[0].size * queueResolvedTask[0].size)
+            {
+                fprintf(stderr, "Warning: not all information was write in socket (main process)\n");
+            }
+
+            close(queueResolvedTask[0].sockfd);
+
+            if (pthread_mutex_lock(&mutexQueueResolvedTask) != 0)
+            {
+                perror("Can't lock mutex (main process)");
+            }
+            queueResolvedTask.pop_back();
+            if (pthread_mutex_unlock(&mutexQueueResolvedTask) != 0)
+            {
+                perror("Can't unlock mutex (main process)");
+            }
+            currentNumberOfConnection--;
+        }
+    }
+    pthread_exit(NULL);
+}
+
 int main()
 {
     pthread_t thread[numberOfThread];
+    pthread_t threadSend;
+
+    if (pthread_create(&threadSend, (pthread_attr_t *)NULL, sendmsg, (void *)NULL) == -1)
+    {
+        perror("An error occurred while creating the send thread");
+        exit(-1);
+    }
 
     for (int i = 0; i < numberOfThread; i++)
     {
@@ -122,9 +169,6 @@ int main()
             exit(-1);
         }
     }
-
-    /* descriptor for listen socket */
-    int sockfd;
 
     /* create TCP-socket */
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
@@ -140,6 +184,8 @@ int main()
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(51000);
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    // fprintf(stdout, "IP %s\n", inet_ntoa(servaddr.sin_addr));
 
     if (bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
     {
@@ -167,99 +213,52 @@ int main()
         exit(-1);
     }
 
-    fprintf(stdout, "IP %s\n", inet_ntoa(servaddr.sin_addr));
-
-    /* create second process for send information */
-    int pid = fork();
-    if (pid == -1)
+    while (1)
     {
-        fprintf(stderr, "Can't create second process (fork): %s", strerror(errno));
-        close(sockfd);
-        exit(-1);
-    }
-    else if (pid == 0)
-    {
-        while (1)
+        request rq;
+        if ((rq.sockfd = accept(sockfd, (struct sockaddr *)&rq.cliaddr, &rq.len)) < 0)
         {
-            request rq;
-            if ((rq.sockfd = accept(sockfd, (struct sockaddr *)&rq.cliaddr, &rq.len)) < 0)
-            {
-                perror("Can't accept new socket");
-                close(sockfd);
-                exit(-1);
-            }
+            perror("Can't accept new socket");
+            close(sockfd);
+            exit(-1);
+        }
+        totalNumberOfConnection++;
+        currentNumberOfConnection++;
+        fprintf(stdout, "Accept new connection %d, IP %s\n", totalNumberOfConnection, inet_ntoa(rq.cliaddr.sin_addr));
 
-            fprintf(stdout, "Accept new connection %d\n", totalNumberOfConnection);
-            totalNumberOfConnection++;
-            currentNumberOfConnection++;
+        if (read(rq.sockfd, (void *)&rq.size, sizeof(int)) < 0)
+        {
+            perror("Can't read size from socket");
+            close(sockfd);
+            exit(-1);
+        }
 
-            if (read(rq.sockfd, (void *)rq.size, sizeof(int)) < 0)
-            {
-                perror("Can't read size from socket");
-                close(sockfd);
-                exit(-1);
-            }
+        if (read(rq.sockfd, (void *)&rq.degree, sizeof(int)) < 0)
+        {
+            perror("Can't read degree from socket");
+            close(sockfd);
+            exit(-1);
+        }
 
-            if (read(rq.sockfd, (void *)rq.degree, sizeof(int)) < 0)
-            {
-                perror("Can't read degree from socket");
-                close(sockfd);
-                exit(-1);
-            }
+        rq.matrix = (int *)malloc(rq.size * rq.size * sizeof(int));
 
-            rq.matrix = (float *)malloc(rq.size * rq.size * sizeof(float));
+        if (read(rq.sockfd, (void *)rq.matrix, rq.size) < 0)
+        {
+            perror("Can't read size from socket");
+            close(sockfd);
+            exit(-1);
+        }
 
-            if (read(rq.sockfd, (void *)rq.matrix, rq.size) < 0)
-            {
-                perror("Can't read size from socket");
-                close(sockfd);
-                exit(-1);
-            }
-
-            if (pthread_mutex_lock(&mutexQueueTask) != 0)
-            {
-                perror("Can't lock mutex (main process)");
-            }
-            queueTask.push_back(rq);
-            if (pthread_mutex_unlock(&mutexQueueTask) != 0)
-            {
-                perror("Can't unlock mutex (main process)");
-            }
+        if (pthread_mutex_lock(&mutexQueueTask) != 0)
+        {
+            perror("Can't lock mutex (main process)");
+        }
+        queueTask.push_back(rq);
+        if (pthread_mutex_unlock(&mutexQueueTask) != 0)
+        {
+            perror("Can't unlock mutex (main process)");
         }
     }
-    else
-    {
-        while (1)
-        {
-            if (queueResolvedTask.size() != 0)
-            {
-                int n;
-                if ((n = write(queueResolvedTask[0].sockfd, queueResolvedTask[0].result, queueResolvedTask[0].size * queueResolvedTask[0].size)) < 0)
-                {
-                    perror("Can't write information in socket (main process)");
-                    close(sockfd);
-                    exit(-1);
-                }
 
-                if (n < queueResolvedTask[0].size * queueResolvedTask[0].size)
-                {
-                    fprintf(stderr, "Warning: not all information was write in socket (main process)\n");
-                }
-
-                close(queueResolvedTask[0].sockfd);
-
-                if (pthread_mutex_lock(&mutexQueueResolvedTask) != 0)
-                {
-                    perror("Can't lock mutex (main process)");
-                }
-                queueResolvedTask.pop_back();
-                if (pthread_mutex_unlock(&mutexQueueResolvedTask) != 0)
-                {
-                    perror("Can't unlock mutex (main process)");
-                }
-                currentNumberOfConnection--;
-            }
-        }
-    }
     return 1;
 }
