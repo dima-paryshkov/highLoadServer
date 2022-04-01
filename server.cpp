@@ -167,7 +167,7 @@ int main()
         exit(-1);
     }
 
-    fprintf(stdout, "IP %s\n", servaddr.sin_addr.s_addr);
+    fprintf(stdout, "IP %s\n", inet_ntoa(servaddr.sin_addr));
 
     /* create second process for send information */
     int pid = fork();
@@ -261,4 +261,5 @@ int main()
             }
         }
     }
+    return 1;
 }

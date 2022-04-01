@@ -16,63 +16,63 @@ struct sockaddr_in servaddr[countConnections];
 
 void *procedure(void *curI)
 {
-    int i = (int)curI;
+    int* i = (int*)curI;
 
     int n = rand() % 100;
     int degree = 2 + rand() % 8;
 
-    array[i] = (float *)malloc(n * n * sizeof(float));
+    array[*i] = (float *)malloc(n * n * sizeof(float));
 
-    for (int j = 0; i < n * n; j++)
-        array[i][j] = (float)((rand() % 1000) / (rand() % 10));
+    for (int j = 0; *i < n * n; j++)
+        array[*i][j] = (float)((rand() % 1000) / (rand() % 10));
 
-    if (connect(sockfd[i], (struct sockaddr *)&servaddr[i], sizeof(servaddr[i])) < 0)
+    if (connect(sockfd[*i], (struct sockaddr *)&servaddr[*i], sizeof(servaddr[*i])) < 0)
     {
         perror("Can't connect to server");
-        close(sockfd[i]);
+        close(sockfd[*i]);
         exit(-1);
     }
     
-    fprintf(stdout, "Connect №%d, ", i);
+    fprintf(stdout, "Connect №%d, ", *i);
     fprintf(stdout, "n = %d. Send: ", n);
-    for (int j = 0; i < n * n; j++)
-        fprintf(stdout, "%f ", array[i][j]);
+    for (int j = 0; *i < n * n; j++)
+        fprintf(stdout, "%f ", array[*i][j]);
 
     int err;
-    if ((err = write(sockfd[i], &n, sizeof(int))) < 0)
+    if ((err = write(sockfd[*i], &n, sizeof(int))) < 0)
     {
         perror("Can't write size");
-        close(sockfd[i]);
+        close(sockfd[*i]);
         exit(-1);
     }
 
-    if ((err = write(sockfd[i], &degree, sizeof(int))) < 0)
+    if ((err = write(sockfd[*i], &degree, sizeof(int))) < 0)
     {
         perror("Can't write degree");
-        close(sockfd[i]);
+        close(sockfd[*i]);
         exit(-1);
     }
 
-    if ((err = write(sockfd[i], array[i], n * n * sizeof(float))) < 0)
+    if ((err = write(sockfd[*i], array[*i], n * n * sizeof(float))) < 0)
     {
         perror("Can't write array");
-        close(sockfd[i]);
+        close(sockfd[*i]);
         exit(-1);
     }
 
-    if ((n = read(sockfd[i], array[i], n * n * sizeof(float))) < 0)
+    if ((n = read(sockfd[*i], array[*i], n * n * sizeof(float))) < 0)
     {
         perror("Can\'t read\n");
-        close(sockfd[i]);
+        close(sockfd[*i]);
         exit(-1);
     }
     
-    fprintf(stdout, "Connect №%d, ", i);
+    fprintf(stdout, "Connect №%d, ", *i);
     fprintf(stdout, "n = %d. Received: ", n);
-    for (int j = 0; i < n * n; j++)
-        fprintf(stdout, "%f ", array[i][j]);
+    for (int j = 0; *i < n * n; j++)
+        fprintf(stdout, "%f ", array[*i][j]);
 
-    if (close(sockfd[i]) != 0)
+    if (close(sockfd[*i]) != 0)
     {
         perror("Can't close socket");
         exit(-1);
@@ -80,7 +80,7 @@ void *procedure(void *curI)
     pthread_exit(NULL);
 }
 
-void main(int argc, char **argv)
+int main(int argc, char **argv)
 {
     if (argc != 2)
     {
@@ -131,4 +131,6 @@ void main(int argc, char **argv)
             exit(-1);
         }
     }
+
+    return 1;
 }
