@@ -91,7 +91,7 @@ void *matrixMultiplication(void *arg)
                 rq.result = c;
                 free(c);
             }
-            
+
             if (pthread_mutex_lock(&mutexQueueResolvedTask) != 0)
             {
                 perror("Can't lock mutex (child process)");
@@ -167,6 +167,8 @@ int main()
         exit(-1);
     }
 
+    fprintf(stdout, "IP %s\n", servaddr.sin_addr.s_addr);
+
     /* create second process for send information */
     int pid = fork();
     if (pid == -1)
@@ -187,6 +189,7 @@ int main()
                 exit(-1);
             }
 
+            fprintf(stdout, "Accept new connection %d\n", totalNumberOfConnection);
             totalNumberOfConnection++;
             currentNumberOfConnection++;
 
