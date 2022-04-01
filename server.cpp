@@ -67,6 +67,31 @@ void *matrixMultiplication(void *arg)
                 }
             }
 
+            if (rq.degree > 2)
+            {
+                float *c = rq.result;
+                rq.result = (float *)malloc(rq.size * rq.size * sizeof(float));
+                for (int l = 2; l < rq.degree; l++)
+                {
+                    for (int i = 0; i < rq.size; i++)
+                    {
+                        for (int j = 0; j < rq.size; j++)
+                        {
+                            rq.result[i * rq.size + j] = 0;
+                            for (int k = 0; k < rq.size; k++)
+                            {
+                                rq.result[i * rq.size + j] += c[i * rq.size + k] + rq.matrix[j * rq.size + k];
+                            }
+                        }
+                    }
+                    float* tmp = c;
+                    c = rq.result;
+                    rq.result = tmp;
+                }
+                rq.result = c;
+                free(c);
+            }
+            
             if (pthread_mutex_lock(&mutexQueueResolvedTask) != 0)
             {
                 perror("Can't lock mutex (child process)");
@@ -229,6 +254,7 @@ int main()
                 {
                     perror("Can't unlock mutex (main process)");
                 }
+                currentNumberOfConnection--;
             }
         }
     }
