@@ -9,8 +9,11 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <iostream>
+#include <chrono>
+#include <iostream>
+#include <fstream>
 
-const int countConnections = 1000;
+const int countConnections = 200;
 int sockfd[countConnections];
 int *array[countConnections];
 struct sockaddr_in servaddr;
@@ -20,8 +23,8 @@ int id[countConnections];
 void *procedure(void *curI)
 {
     int *i = (int *)curI;
-    int n = (10 + rand()) % 128;
-    int degree = 10 + rand() % 20;
+    int n = 128;
+    int degree = 20;
 
     array[*i] = (int *)malloc(n * n * sizeof(int));
 
@@ -57,7 +60,7 @@ void *procedure(void *curI)
         exit(-1);
     }
 
-    fprintf(stdout, "Connect %d, n = %d, count of send bytes = %d\n", *i, n, err);
+    // fprintf(stdout, "Connect %d, n = %d, count of send bytes = %d\n", *i, n, err);
 
     if ((err = read(sockfd[*i], &array[*i][0], n * n * sizeof(int))) < 0)
     {
@@ -66,7 +69,7 @@ void *procedure(void *curI)
         exit(-1);
     }
 
-    fprintf(stdout, "Connect %d, n = %d, count of recv bytes = %d\n", *i, n, err);
+    // fprintf(stdout, "Connect %d, n = %d, count of recv bytes = %d\n", *i, n, err);
  
     if (close(sockfd[*i]) != 0)
     {
@@ -78,6 +81,7 @@ void *procedure(void *curI)
 
 int main(int argc, char **argv)
 {
+    auto begin = std::chrono::steady_clock::now();
     if (argc != 2)
     {
         fprintf(stderr, "Usage: ./client <IP address>\n");
@@ -126,6 +130,10 @@ int main(int argc, char **argv)
             exit(-1);
         }
     }
+
+    auto end = std::chrono::steady_clock::now();
+    auto time = std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
+    std::cout << "Time: " << time.count() <<  std::endl;
 
     return 1;
 }

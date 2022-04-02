@@ -31,7 +31,7 @@ int totalNumberOfConnection = 0;
 int totalNumberProcessedOfConnection = 0;
 int currentNumberOfConnection = 0;
 
-const int numberOfThread = 11;
+const int numberOfThread = 1;
 
 bool activeServer = true;
 
@@ -128,7 +128,7 @@ void *sendmsg(void *arg)
         }
         if (count < queueResolvedTask.size())
         {
-            fprintf(stdout, "count = %d, socket(int) = %d\n", count, queueResolvedTask[count].sockfd);
+            // fprintf(stdout, "count = %d, socket(int) = %d\n", count, queueResolvedTask[count].sockfd);
             int n;
             // for (int i = 0; i < queueResolvedTask[0].size * queueResolvedTask[0].size; i++)
             //     fprintf(stdout, "%d ", queueResolvedTask[0].result[i]);
@@ -140,7 +140,7 @@ void *sendmsg(void *arg)
                 close(sockfd);
                 exit(-1);
             }
-            fprintf(stdout, "Send %d bytes, n = %d\n", n, queueResolvedTask[count].size);
+            // fprintf(stdout, "Send %d bytes, n = %d\n", n, queueResolvedTask[count].size);
             if (n < queueResolvedTask[count].size * queueResolvedTask[count].size)
             {
                 fprintf(stderr, "Warning: not all information was write in socket (main process)\n");
@@ -236,7 +236,7 @@ int main()
         }
         totalNumberOfConnection++;
         currentNumberOfConnection++;
-        fprintf(stdout, "Accept new connection %d, IP %s, socket(int) = %d\n", totalNumberOfConnection, inet_ntoa(rq->cliaddr.sin_addr), rq->sockfd);
+        // fprintf(stdout, "Accept new connection %d, IP %s, socket(int) = %d\n", totalNumberOfConnection, inet_ntoa(rq->cliaddr.sin_addr), rq->sockfd);
 
         if (read(rq->sockfd, (void *)&rq->size, sizeof(int)) < 0)
         {
@@ -261,7 +261,7 @@ int main()
             close(sockfd);
             exit(-1);
         }
-        fprintf(stdout, "Received %d bytes\n", err);
+        // fprintf(stdout, "Received %d bytes\n", err);
         // fprintf(stdout, "Received: n = %d, degree = %d, matrix = ", rq.size, rq.degree);
         // for (int i = 0; i < rq.size; i++)
         //     for (int j = 0; j < rq.size; j++)
