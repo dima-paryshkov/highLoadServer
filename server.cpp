@@ -28,14 +28,16 @@ vector<request> queueTask;
 vector<request> queueResolvedTask;
 
 int totalNumberOfConnection = 0;
+int totalNumberProcessedOfConnection = 0;
 int currentNumberOfConnection = 0;
 
-const int numberOfThread = 1;
+const int numberOfThread = 11;
+
+bool activeServer = true;
 
 pthread_mutex_t mutexQueueTask;
 pthread_mutex_t mutexQueueResolvedTask;
 
-/* descriptor for listen socket */
 int sockfd;
 
 bool active = true;
@@ -45,20 +47,21 @@ void *matrixMultiplication(void *arg)
     request rq;
     while (active)
     {
-        sleep(1);
         if (pthread_mutex_lock(&mutexQueueTask) != 0)
         {
             perror("Can't lock mutex (child process)");
         }
         if (queueTask.size() > 0)
         {
-            rq = queueTask[0];
+            int size = queueTask.size() - 1;
+            rq = queueTask[size];
             queueTask.pop_back();
             if (pthread_mutex_unlock(&mutexQueueTask) != 0)
             {
                 perror("Can't unlock mutex (child process)");
             }
             rq.result = (int *)malloc(rq.size * rq.size * sizeof(int));
+
             for (int i = 0; i < rq.size; i++)
             {
                 for (int j = 0; j < rq.size; j++)
@@ -88,7 +91,7 @@ void *matrixMultiplication(void *arg)
                             }
                         }
                     }
-                    int* tmp = c;
+                    int *tmp = c;
                     c = rq.result;
                     rq.result = tmp;
                 }
@@ -114,38 +117,47 @@ void *matrixMultiplication(void *arg)
     pthread_exit(NULL);
 }
 
-void* sendmsg(void *arg)
+void *sendmsg(void *arg)
 {
-    while (1)
+    int count = 0;
+    while (activeServer)
     {
-        if (queueResolvedTask.size() != 0)
+        if (pthread_mutex_lock(&mutexQueueResolvedTask) != 0)
         {
+            perror("Can't lock mutex (main process)");
+        }
+        if (count < queueResolvedTask.size())
+        {
+            fprintf(stdout, "count = %d, socket(int) = %d\n", count, queueResolvedTask[count].sockfd);
             int n;
-            if ((n = write(queueResolvedTask[0].sockfd, queueResolvedTask[0].result, queueResolvedTask[0].size * queueResolvedTask[0].size)) < 0)
+            // for (int i = 0; i < queueResolvedTask[0].size * queueResolvedTask[0].size; i++)
+            //     fprintf(stdout, "%d ", queueResolvedTask[0].result[i]);
+            // fprintf(stdout, "Socket %d\n", queueResolvedTask[count].sockfd);
+            // fprintf(stdout, "Count %d\n", count);
+            if ((n = write(queueResolvedTask[count].sockfd, (void *)queueResolvedTask[count].result, queueResolvedTask[count].size * queueResolvedTask[count].size * sizeof(int))) < 0)
             {
                 perror("Can't write information in socket (main process)");
                 close(sockfd);
                 exit(-1);
             }
-
-            if (n < queueResolvedTask[0].size * queueResolvedTask[0].size)
+            fprintf(stdout, "Send %d bytes, n = %d\n", n, queueResolvedTask[count].size);
+            if (n < queueResolvedTask[count].size * queueResolvedTask[count].size)
             {
                 fprintf(stderr, "Warning: not all information was write in socket (main process)\n");
             }
 
-            close(queueResolvedTask[0].sockfd);
-
-            if (pthread_mutex_lock(&mutexQueueResolvedTask) != 0)
-            {
-                perror("Can't lock mutex (main process)");
-            }
-            queueResolvedTask.pop_back();
-            if (pthread_mutex_unlock(&mutexQueueResolvedTask) != 0)
-            {
-                perror("Can't unlock mutex (main process)");
-            }
+            close(queueResolvedTask[count].sockfd);
+            // queueResolvedTask.pop_back();
             currentNumberOfConnection--;
+            totalNumberProcessedOfConnection++;
+            count++;
         }
+        if (pthread_mutex_unlock(&mutexQueueResolvedTask) != 0)
+        {
+            perror("Can't unlock mutex (main process)");
+        }
+        // if (totalNumberProcessedOfConnection == 100)
+        //     activeServer = false;
     }
     pthread_exit(NULL);
 }
@@ -155,7 +167,7 @@ int main()
     pthread_t thread[numberOfThread];
     pthread_t threadSend;
 
-    if (pthread_create(&threadSend, (pthread_attr_t *)NULL, sendmsg, (void *)NULL) == -1)
+    if (pthread_create(&threadSend, (pthread_attr_t*)NULL, sendmsg, (void *)NULL) == -1)
     {
         perror("An error occurred while creating the send thread");
         exit(-1);
@@ -189,7 +201,7 @@ int main()
 
     if (bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
     {
-        fprintf(stderr, "Can't bind socket: %s", strerror(errno));
+        fprintf(stderr, "Can't bind socket: %s\n", strerror(errno));
         close(sockfd);
         exit(-1);
     }
@@ -213,10 +225,10 @@ int main()
         exit(-1);
     }
 
-    while (1)
+    while (activeServer)
     {
-        request rq;
-        if ((rq.sockfd = accept(sockfd, (struct sockaddr *)&rq.cliaddr, &rq.len)) < 0)
+        request* rq = new request;
+        if ((rq->sockfd = accept(sockfd, (struct sockaddr *)&rq->cliaddr, &rq->len)) < 0)
         {
             perror("Can't accept new socket");
             close(sockfd);
@@ -224,36 +236,42 @@ int main()
         }
         totalNumberOfConnection++;
         currentNumberOfConnection++;
-        fprintf(stdout, "Accept new connection %d, IP %s\n", totalNumberOfConnection, inet_ntoa(rq.cliaddr.sin_addr));
+        fprintf(stdout, "Accept new connection %d, IP %s, socket(int) = %d\n", totalNumberOfConnection, inet_ntoa(rq->cliaddr.sin_addr), rq->sockfd);
 
-        if (read(rq.sockfd, (void *)&rq.size, sizeof(int)) < 0)
+        if (read(rq->sockfd, (void *)&rq->size, sizeof(int)) < 0)
         {
             perror("Can't read size from socket");
             close(sockfd);
             exit(-1);
         }
 
-        if (read(rq.sockfd, (void *)&rq.degree, sizeof(int)) < 0)
+        if (read(rq->sockfd, (void *)&rq->degree, sizeof(int)) < 0)
         {
             perror("Can't read degree from socket");
             close(sockfd);
             exit(-1);
         }
 
-        rq.matrix = (int *)malloc(rq.size * rq.size * sizeof(int));
+        rq->matrix = (int *)malloc(rq->size * rq->size * sizeof(int));
 
-        if (read(rq.sockfd, (void *)rq.matrix, rq.size) < 0)
+        int err;
+        if ((err = read(rq->sockfd, (void *)rq->matrix, rq->size * rq->size * sizeof(int))) < 0)
         {
             perror("Can't read size from socket");
             close(sockfd);
             exit(-1);
         }
-
+        fprintf(stdout, "Received %d bytes\n", err);
+        // fprintf(stdout, "Received: n = %d, degree = %d, matrix = ", rq.size, rq.degree);
+        // for (int i = 0; i < rq.size; i++)
+        //     for (int j = 0; j < rq.size; j++)
+        //         fprintf(stdout, "%d ", rq.matrix[i * rq.size + j]);
+        // fprintf(stdout, "\n");
         if (pthread_mutex_lock(&mutexQueueTask) != 0)
         {
             perror("Can't lock mutex (main process)");
         }
-        queueTask.push_back(rq);
+        queueTask.push_back(*rq);
         if (pthread_mutex_unlock(&mutexQueueTask) != 0)
         {
             perror("Can't unlock mutex (main process)");
